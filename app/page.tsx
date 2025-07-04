@@ -56,7 +56,7 @@ export default async function Home() {
   }
 
   // Check if user exists in our users table, if not create them
-  const { data: userData, error: userError } = await supabase
+  const { error: userError } = await supabase
     .from("users")
     .select("*")
     .eq("id", data.user.id)
