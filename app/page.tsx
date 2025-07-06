@@ -63,7 +63,7 @@ export default async function Home() {
     .single();
 
   if (userError && userError.code === "PGRST116") {
-    // User doesn't exist, create them
+    // User doesn\'t exist, create them
     const { error: insertError } = await supabase
       .from("users")
       .insert([
@@ -104,4 +104,5 @@ export default async function Home() {
     </div>
   );
 }
+
 

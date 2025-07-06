@@ -1,14 +1,15 @@
-
 import Link from "next/link";
 import { headers } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 import { redirect } from "next/navigation";
 
-export default function Login({
+export default async function Login({
   searchParams,
 }: { 
-  searchParams: { message: string };
+  searchParams: Promise<{ message?: string }>;
 }) {
+  const params = await searchParams;
+  
   const signIn = async (formData: FormData) => {
     "use server";
 
@@ -104,14 +105,13 @@ export default function Login({
         >
           Sign Up
         </button>
-        {searchParams?.message && (
+        {params?.message && (
           <p className="mt-4 p-4 bg-foreground/10 text-foreground text-center">
-            {searchParams.message}
+            {params.message}
           </p>
         )}
       </form>
     </div>
   );
 }
-
 
