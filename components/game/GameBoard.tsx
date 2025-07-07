@@ -3,112 +3,99 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 
-interface PlayerBuilding {
-  id: string;
-  user_id: string;
-  building_id: string;
-  position_x: number;
-  position_y: number;
-  building: {
-    name: string;
-    type: string;
-    image_url: string | null;
-    size_x: number;
-    size_y: number;
-  };
-}
-
 interface GameBoardProps {
   userId: string;
 }
 
-export default function GameBoard({ userId }: GameBoardProps) {
-  const [playerBuildings, setPlayerBuildings] = useState<PlayerBuilding[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
+interface Building {
+  id: string;
+  name: string;
+  type: string;
+  image_url: string;
+}
 
+interface PlacedBuilding {
+  id: string;
+  building_id: string;
+  x: number;
+  y: number;
+  building: Building;
+}
+
+export default function GameBoard({ userId }: GameBoardProps) {
+  const [landSize, setLandSize] = useState({ x: 10, y: 10 });
+  const [placedBuildings, setPlacedBuildings] = useState<PlacedBuilding[]>([]);
+  const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null);
+  const [loading, setLoading] = useState(true);
   const supabase = createClient();
-  const GRID_SIZE = 10;
 
   useEffect(() => {
-    fetchPlayerBuildings();
-    
-    // Set up real-time subscription for building updates
-    const channel = supabase
-      .channel("player-buildings")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "player_buildings",
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          fetchPlayerBuildings();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    fetchGameData();
   }, [userId]);
 
-  const fetchPlayerBuildings = async () => {
+  const fetchGameData = async () => {
     try {
-      const { data, error } = await supabase
-        .from("player_buildings")
+      // Fetch user land size
+      const { data: userData, error: userError } = await supabase
+        .from("users")
+        .select("land_size_x, land_size_y")
+        .eq("id", userId)
+        .single();
+
+      if (userError) {
+        console.error("Error fetching user data:", userError);
+        return;
+      }
+
+      setLandSize({ x: userData.land_size_x, y: userData.land_size_y });
+
+      // Fetch placed buildings
+      const { data: buildingsData, error: buildingsError } = await supabase
+        .from("user_buildings")
         .select(`
-          *,
-          building:buildings(*)
+          id,
+          building_id,
+          x,
+          y,
+          building:buildings(id, name, type, image_url)
         `)
         .eq("user_id", userId);
 
-      if (error) throw error;
-      setPlayerBuildings(data || []);
+      if (buildingsError) {
+        console.error("Error fetching buildings:", buildingsError);
+        return;
+      }
+
+      setPlacedBuildings(buildingsData || []);
     } catch (error) {
-      console.error("Error fetching player buildings:", error);
+      console.error("Error:", error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const getBuildingAtPosition = (x: number, y: number) => {
-    return playerBuildings.find(
-      (pb) =>
-        pb.position_x <= x &&
-        x < pb.position_x + pb.building.size_x &&
-        pb.position_y <= y &&
-        y < pb.position_y + pb.building.size_y
-    );
   };
 
   const handleCellClick = (x: number, y: number) => {
     setSelectedCell({ x, y });
   };
 
+  const getBuildingAtPosition = (x: number, y: number) => {
+    return placedBuildings.find(building => building.x === x && building.y === y);
+  };
+
   const renderCell = (x: number, y: number) => {
     const building = getBuildingAtPosition(x, y);
     const isSelected = selectedCell?.x === x && selectedCell?.y === y;
     
-    let cellContent = "";
-    let cellClass = "w-12 h-12 border border-gray-300 cursor-pointer transition-colors ";
+    let cellClass = "w-8 h-8 border border-gray-300 cursor-pointer transition-colors ";
     
     if (building) {
-      // Only show building content on the top-left cell of the building
-      if (building.position_x === x && building.position_y === y) {
-        cellContent = building.building.name.charAt(0).toUpperCase();
-        cellClass += "bg-blue-200 hover:bg-blue-300 flex items-center justify-center font-bold text-xs ";
-      } else {
-        cellClass += "bg-blue-100 ";
-      }
+      cellClass += "bg-blue-500 hover:bg-blue-600 ";
     } else {
-      cellClass += "bg-green-100 hover:bg-green-200 ";
+      cellClass += "bg-green-200 hover:bg-green-300 ";
     }
     
     if (isSelected) {
-      cellClass += "ring-2 ring-blue-500 ";
+      cellClass += "ring-2 ring-yellow-400 ";
     }
 
     return (
@@ -118,7 +105,11 @@ export default function GameBoard({ userId }: GameBoardProps) {
         onClick={() => handleCellClick(x, y)}
         title={building ? building.building.name : `Empty land (${x}, ${y})`}
       >
-        {cellContent}
+        {building && (
+          <div className="w-full h-full flex items-center justify-center text-xs text-white font-bold">
+            🏠
+          </div>
+        )}
       </div>
     );
   };
@@ -126,11 +117,11 @@ export default function GameBoard({ userId }: GameBoardProps) {
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-bold mb-4">City Map</h2>
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
           <div className="grid grid-cols-10 gap-1">
             {Array.from({ length: 100 }).map((_, i) => (
-              <div key={i} className="w-12 h-12 bg-gray-200 rounded"></div>
+              <div key={i} className="w-8 h-8 bg-gray-300 rounded"></div>
             ))}
           </div>
         </div>
@@ -141,34 +132,50 @@ export default function GameBoard({ userId }: GameBoardProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
       <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-        Your City ({GRID_SIZE}×{GRID_SIZE})
+        City Map ({landSize.x} × {landSize.y})
       </h2>
       
-      <div className="grid grid-cols-10 gap-1 mb-4">
-        {Array.from({ length: GRID_SIZE }).map((_, y) =>
-          Array.from({ length: GRID_SIZE }).map((_, x) => renderCell(x, y))
-        )}
+      <div className="mb-4">
+        <div 
+          className="grid gap-1 mx-auto"
+          style={{ 
+            gridTemplateColumns: `repeat(${landSize.x}, minmax(0, 1fr))`,
+            maxWidth: `${landSize.x * 2.5}rem`
+          }}
+        >
+          {Array.from({ length: landSize.y }).map((_, y) =>
+            Array.from({ length: landSize.x }).map((_, x) =>
+              renderCell(x, y)
+            )
+          )}
+        </div>
       </div>
       
       {selectedCell && (
-        <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-700 rounded">
-          <p className="text-sm">
+        <div className="mt-4 p-4 bg-gray-100 dark:bg-gray-700 rounded">
+          <h3 className="font-semibold text-gray-800 dark:text-white">
             Selected: ({selectedCell.x}, {selectedCell.y})
-          </p>
+          </h3>
           {getBuildingAtPosition(selectedCell.x, selectedCell.y) ? (
-            <p className="text-sm text-blue-600">
-              Building: {getBuildingAtPosition(selectedCell.x, selectedCell.y)?.building.name}
-            </p>
+            <div className="mt-2">
+              <p className="text-gray-600 dark:text-gray-400">
+                Building: {getBuildingAtPosition(selectedCell.x, selectedCell.y)?.building.name}
+              </p>
+              <button className="mt-2 bg-red-500 hover:bg-red-600 text-white py-1 px-3 rounded text-sm">
+                Remove Building
+              </button>
+            </div>
           ) : (
-            <p className="text-sm text-green-600">Empty land - Ready to build!</p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">
+              Empty land - Select a building from the marketplace to place here
+            </p>
           )}
         </div>
       )}
       
-      <div className="mt-4 text-xs text-gray-500">
-        <p>💡 Click on any cell to select it</p>
-        <p>🏠 Blue cells contain buildings</p>
-        <p>🌱 Green cells are empty land</p>
+      <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+        <p>🟢 Empty Land | 🔵 Buildings</p>
+        <p>Click on any cell to select it</p>
       </div>
     </div>
   );
